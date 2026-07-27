@@ -212,7 +212,7 @@ def analyze_market(df):
                     confidence += 10
                 if latest['macd_diff'] > 0 and previous['macd_diff'] < latest['macd_diff']:
                     confidence += 10
-                 if latest['adx'] > 20:
+                if latest['adx'] > 20:
         confidence += 10
     else:
         signal = "HOLD"
@@ -232,7 +232,7 @@ def analyze_market(df):
                     confidence += 10
                 if latest['macd_diff'] < 0 and previous['macd_diff'] > latest['macd_diff']:
                     confidence += 10
-                 if latest['adx'] > 20:
+                if latest['adx'] > 20:
         confidence += 10
     else:
         signal = "HOLD"
