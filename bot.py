@@ -170,7 +170,8 @@ def analyze_market(df):
 
     macd = ta.trend.MACD(close=df['close'])
     df['macd_diff'] = macd.macd_diff()
-
+    df['adx'] = ta.trend.adx(df['high'], df['low'], df['close'], window=14)
+    
     latest = df.iloc[-1]
     previous = df.iloc[-2]
 
