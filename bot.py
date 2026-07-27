@@ -212,7 +212,11 @@ def analyze_market(df):
                     confidence += 10
                 if latest['macd_diff'] > 0 and previous['macd_diff'] < latest['macd_diff']:
                     confidence += 10
-
+                 if latest['adx'] > 20:
+        confidence += 10
+    else:
+        signal = "HOLD"
+        
     # اتجاه البيع (PUT)
     if latest['close'] < latest['ema_trend'] and smart_candle_valid and prev_is_red and is_strong_prev_candle:
         if (latest['close'] - recent_low) > (latest['atr'] * 0.5):
@@ -228,7 +232,11 @@ def analyze_market(df):
                     confidence += 10
                 if latest['macd_diff'] < 0 and previous['macd_diff'] > latest['macd_diff']:
                     confidence += 10
-
+                 if latest['adx'] > 20:
+        confidence += 10
+    else:
+        signal = "HOLD"
+        
     confidence = min(confidence, 95)
     return signal, latest['close'], latest['rsi'], confidence
 
