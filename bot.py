@@ -10,6 +10,7 @@ import pandas as pd
 import ta
 import yfinance as yf
 from datetime import datetime, timedelta
+
 # تشغيل خادم الويب في الخلفية ليتوافق مع متطلبات Render المجانية
 def run_server():
     PORT = int(os.environ.get("PORT", 8080))
@@ -19,9 +20,9 @@ def run_server():
 
 threading.Thread(target=run_server, daemon=True).start()
 
-# 1. إعدادات التلجرام
-TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+# 1. إعدادات التلجرام (تم اعتماد الرمز والآي دي الخاص بك)
+TOKEN = "8952348741:AAFbfBHqJrJpOupJBrctXomZfZ64F9isGf4"
+CHAT_ID = "8463817127"
 
 # 2. الحد الأدنى للفاصل الزمني بين الصفقات العامة (300 ثانية = 5 دقائق)
 MIN_SIGNAL_INTERVAL = 300  
@@ -362,7 +363,7 @@ if __name__ == "__main__":
                         last_signals[symbol] = signal
                         last_global_signal_time = current_time
                     else:
-                        print(f"⏳ [{pair_name}] تم تأجيل الإشارة مؤقتاً لتجنب التداخل.")
+                        print(f"⏳ [{pair_name}] تم تأجيل الإشارة مؤقته لتجنب التداخل.")
                 else:
                     if signal == "HOLD":
                         last_signals[symbol] = "HOLD"
@@ -376,4 +377,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ خطأ غير متوقع: {e}")
             time.sleep(10)
-    
+            
