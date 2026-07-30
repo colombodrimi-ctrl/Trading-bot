@@ -311,7 +311,7 @@ if __name__ == "__main__":
                 df = get_market_data(symbol, interval="5m")
                 signal, price, rsi_val, confidence = analyze_market(df)
 
-                if signal in ["BUY", "SELL"] and signal != last_signals[symbol] and confidence >= 85:
+                if signal in ["BUY", "SELL"] and signal != last_signals[symbol] and confidence >= 70:
                     time_since_last_signal = current_time - last_global_signal_time
 
                     if time_since_last_signal >= MIN_SIGNAL_INTERVAL:
