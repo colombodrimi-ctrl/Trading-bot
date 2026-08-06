@@ -20,12 +20,13 @@ def run_server():
 
 threading.Thread(target=run_server, daemon=True).start()
 
-# 1. إعدادات التلجرام (تم اعتماد الرمز والآي دي الخاص بك)
-TOKEN = "8952348741:AAFbfBHqJrJpOupJBrctXomZfZ64F9isGf4"
-CHAT_ID = "8463817127"
+# ================== إعدادات التلجرام (ضع بياناتك هنا) ==================
+TOKEN = "8952348741:AAFbfBHqJrJpOupJBrctXomZfZ64F9isGf4"  # ضع التوكن الخاص بك
+CHAT_ID = "8463817127"  # ضع المعرف الخاص بك
 
-# 2. الحد الأدنى للفاصل الزمني بين الصفقات العامة (300 ثانية = 5 دقائق)
-MIN_SIGNAL_INTERVAL = 300  
+# ================== إعدادات البوت (تم تعديلها لتكون أكثر مرونة) ==================
+MIN_SIGNAL_INTERVAL = 180  # 3 دقائق بين الصفقات (لتسريع الظهور)
+MIN_CONFIDENCE = 65        # تم تخفيضها من 70 إلى 65
 
 active_trades = []
 news_events_cache = []
@@ -50,10 +51,11 @@ SYMBOLS = {
     "^GSPC": "مؤشر S&P 500"
 }
 
-# -------------------------------------------------------------
-# دالة إرسال الرسائل المدعومة بالأزرار التفاعلية
-# -------------------------------------------------------------
+# ================== دوال التلغرام ==================
 def send_telegram_message(message, reply_markup=None):
+    if not TOKEN or not CHAT_ID:
+        print("⚠️ تنبيه: لم يتم إدخال TOKEN أو CHAT_ID!")
+        return False
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {
         "chat_id": CHAT_ID,
@@ -71,9 +73,7 @@ def send_telegram_message(message, reply_markup=None):
         print(f"❌ خطأ أثناء الإرسال: {e}")
         return False
 
-# -------------------------------------------------------------
-# جلب وفحص الأخبار الاقتصادية
-# -------------------------------------------------------------
+# ================== جلب وفحص الأخبار الاقتصادية ==================
 def fetch_economic_news():
     global news_events_cache, last_news_fetch_time
     current_time = time.time()
@@ -99,7 +99,7 @@ def fetch_economic_news():
                         })
                 news_events_cache = high_impact_news
                 last_news_fetch_time = current_time
-                print(f"📰 تم تحديث تقويم الأخبار بنجاح! ({len(high_impact_news)} خبر قوي هذا الأسبوع)")
+                print(f"📰 تم تحديث تقويم الأخبار بنجاح! ({len(high_impact_news)} خبر قوي)")
                 return news_events_cache
     except Exception as e:
         print(f"⚠️ تعذر جلب الأخبار الاقتصادية: {e}")
@@ -128,14 +128,13 @@ def is_news_time(symbol, pair_name):
                 
     return False
 
-# -------------------------------------------------------------
-# تحليل السوق وجلب البيانات (النسخة الاحترافية العليا)
-# -------------------------------------------------------------
-def get_market_data(symbol, interval="5m", period="5d"):
+# ================== جلب البيانات (تم زيادة الفترة إلى 10 أيام) ==================
+def get_market_data(symbol, interval="5m", period="10d"):
     try:
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval=interval)
-        if df.empty or len(df) < 200:
+        # تم تخفيض الحد الأدنى للشمعات من 200 إلى 100
+        if df.empty or len(df) < 100:
             return None
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
@@ -145,22 +144,24 @@ def get_market_data(symbol, interval="5m", period="5d"):
         print(f"⚠️ خطأ في جلب بيانات {symbol}: {e}")
         return None
 
-def is_smart_candle(candle):
+# ================== دالة الشمعة القوية (مع عتبة مرنة) ==================
+def is_smart_candle(candle, threshold=0.45):
     total_length = candle['high'] - candle['low']
     body_length = abs(candle['close'] - candle['open'])
     if total_length == 0:
         return False
-    return (body_length / total_length) >= 0.60
+    return (body_length / total_length) >= threshold
 
+# ================== التحليل الأساسي (مع تخفيف جميع الشروط) ==================
 def analyze_market(df):
-    if df is None or len(df) < 200:
+    if df is None or len(df) < 100:
         return "HOLD", 0, 0, 0
 
+    # حساب المؤشرات
     df['sma_fast'] = ta.trend.sma_indicator(df['close'], window=10)
     df['sma_slow'] = ta.trend.sma_indicator(df['close'], window=30)
     df['rsi'] = ta.momentum.rsi(df['close'], window=14)
     df['ema_trend'] = ta.trend.ema_indicator(df['close'], window=200)
-
     df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'], window=14)
     df['atr_ma'] = df['atr'].rolling(window=20).mean()
 
@@ -175,74 +176,86 @@ def analyze_market(df):
     latest = df.iloc[-1]
     previous = df.iloc[-2]
 
-    # 1. فلتر السيولة والتذبذب
-    has_enough_volatility = latest['atr'] > (latest['atr_ma'] * 0.8)
-    smart_candle_valid = is_smart_candle(latest)
+    # ------------------- الفلاتر الأساسية (مخففة) -------------------
+    # 1. تقلب ATR: تم تخفيفها من 0.8 إلى 0.5
+    has_enough_volatility = latest['atr'] > (latest['atr_ma'] * 0.5)
+    # 2. الشمعة القوية: تم تخفيفها من 0.60 إلى 0.45
+    smart_candle_valid = is_smart_candle(latest, threshold=0.45)
 
     if not has_enough_volatility:
         return "HOLD", latest['close'], latest['rsi'], 0
 
-    # 2. فلتر قوة الشمعة السابقة
+    # 3. قوة الشمعة السابقة: تم تخفيفها من 0.50 إلى 0.35
     prev_body = abs(previous['close'] - previous['open'])
     prev_range = previous['high'] - previous['low']
-    is_strong_prev_candle = (prev_range > 0) and ((prev_body / prev_range) >= 0.50)
+    is_strong_prev_candle = (prev_range > 0) and ((prev_body / prev_range) >= 0.35)
 
     prev_is_green = previous['close'] > previous['open']
     prev_is_red = previous['close'] < previous['open']
 
-    # 3. حساب مستويات الدعم والمقاومة السريعة
+    # 4. مستويات الدعم والمقاومة
     recent_high = df['high'].iloc[-20:-1].max()
     recent_low = df['low'].iloc[-20:-1].min()
 
     signal = "HOLD"
     confidence = 0
 
-    # اتجاه الشراء (CALL)
+    # ---------- اتجاه الشراء (CALL) ----------
     if latest['close'] > latest['ema_trend'] and smart_candle_valid and prev_is_green and is_strong_prev_candle: 
-        if (recent_high - latest['close']) > (latest['atr'] * 0.5):
+        # تم تخفيف شرط المسافة من 0.5 إلى 0.4
+        if (recent_high - latest['close']) > (latest['atr'] * 0.4):
             if (previous['sma_fast'] <= previous['sma_slow']) and (latest['sma_fast'] > latest['sma_slow']):
                 signal = "BUY"
-                confidence = 80
+                confidence = 75  # تم تخفيفها من 80
             elif latest['close'] <= latest['bb_low']:
                 signal = "BUY"
-                confidence = 80
+                confidence = 75
 
             if signal == "BUY":
-                if latest['rsi'] < 40:
+                # RSI: تم تخفيفها من 40 إلى 45
+                if latest['rsi'] < 45:
                     confidence += 10
                 if latest['macd_diff'] > 0 and previous['macd_diff'] < latest['macd_diff']:
                     confidence += 10
+                
+                # ADX: بدلاً من إلغاء الإشارة، نتعامل معها بمرونة
                 if latest['adx'] > 15:
-                    confidence += 10
+                    confidence += 5
+                elif latest['adx'] > 10:
+                    confidence += 2  # مكافأة صغيرة
                 else:
-                    signal = "HOLD"
-        
-    # اتجاه البيع (PUT)
+                    confidence -= 5  # خفض الثقة بدلاً من الإلغاء
+
+    # ---------- اتجاه البيع (PUT) ----------
     if latest['close'] < latest['ema_trend'] and smart_candle_valid and prev_is_red and is_strong_prev_candle:
-        if (latest['close'] - recent_low) > (latest['atr'] * 0.5):
+        if (latest['close'] - recent_low) > (latest['atr'] * 0.4):
             if (previous['sma_fast'] >= previous['sma_slow']) and (latest['sma_fast'] < latest['sma_slow']):
                 signal = "SELL"
-                confidence = 80
+                confidence = 75
             elif latest['close'] >= latest['bb_high']:
                 signal = "SELL"
-                confidence = 80
+                confidence = 75
 
             if signal == "SELL":
-                if latest['rsi'] > 60:
+                # RSI: تم تخفيفها من 60 إلى 55
+                if latest['rsi'] > 55:
                     confidence += 10
                 if latest['macd_diff'] < 0 and previous['macd_diff'] > latest['macd_diff']:
                     confidence += 10
+                
+                # ADX: معالجة مرنة
                 if latest['adx'] > 15:
-                    confidence += 10
+                    confidence += 5
+                elif latest['adx'] > 10:
+                    confidence += 2
                 else:
-                    signal = "HOLD"
-        
-    confidence = min(confidence, 95)
+                    confidence -= 5
+
+    # التأكد من أن الثقة لا تقل عن الصفر ولا تزيد عن 95
+    confidence = max(0, min(confidence, 95))
     return signal, latest['close'], latest['rsi'], confidence
 
-# -------------------------------------------------------------
-# فحص وتتبع النتائج
-# -------------------------------------------------------------
+# ================== فحص وتتبع النتائج ==================
 def check_active_trades():
     global active_trades
     now = datetime.now()
@@ -250,42 +263,43 @@ def check_active_trades():
 
     for trade in active_trades:
         if now >= trade['expiry_datetime']:
-            df = get_market_data(trade['symbol'], interval="1m", period="1d")
-            if df is not None and not df.empty:
-                exit_price = df.iloc[-1]['close']
-                entry_price = trade['entry_price']
-                signal = trade['signal']
+            try:
+                df = get_market_data(trade['symbol'], interval="1m", period="1d")
+                if df is not None and not df.empty:
+                    exit_price = df.iloc[-1]['close']
+                    entry_price = trade['entry_price']
+                    signal = trade['signal']
 
-                is_win = False
-                if signal == "BUY" and exit_price > entry_price:
-                    is_win = True
-                elif signal == "SELL" and exit_price < entry_price:
-                    is_win = True
+                    is_win = False
+                    if signal == "BUY" and exit_price > entry_price:
+                        is_win = True
+                    elif signal == "SELL" and exit_price < entry_price:
+                        is_win = True
 
-                status_emoji = "🟢 صفقة ناجحة (WIN)" if is_win else "🔴 صفقة خاسرة (LOSS)"
-                direction_str = "شراء" if signal == "BUY" else "بيع"
+                    status_emoji = "🟢 صفقة ناجحة (WIN)" if is_win else "🔴 صفقة خاسرة (LOSS)"
+                    direction_str = "شراء" if signal == "BUY" else "بيع"
 
-                result_msg = (
-                    f"📊 <b>تقرير نتيجة الصفقة!</b>\n\n"
-                    f"📊 الزوج: <b>{trade['pair_name']}</b>\n"
-                    f"📈 الاتجاه: <b>{direction_str}</b>\n"
-                    f"💵 سعر الدخول: <code>{entry_price:.5f}</code>\n"
-                    f"🏁 سعر الإغلاق: <code>{exit_price:.5f}</code>\n\n"
-                    f"🏆 النتيجة: <b>{status_emoji}</b>"
-                )
-                send_telegram_message(result_msg)
-                print(f"🏁 [{trade['pair_name']}] نتيجة الصفقة: {'WIN' if is_win else 'LOSS'}")
-                trades_to_remove.append(trade)
+                    result_msg = (
+                        f"📊 <b>تقرير نتيجة الصفقة!</b>\n\n"
+                        f"📊 الزوج: <b>{trade['pair_name']}</b>\n"
+                        f"📈 الاتجاه: <b>{direction_str}</b>\n"
+                        f"💵 سعر الدخول: <code>{entry_price:.5f}</code>\n"
+                        f"🏁 سعر الإغلاق: <code>{exit_price:.5f}</code>\n\n"
+                        f"🏆 النتيجة: <b>{status_emoji}</b>"
+                    )
+                    send_telegram_message(result_msg)
+                    print(f"🏁 [{trade['pair_name']}] نتيجة الصفقة: {'WIN' if is_win else 'LOSS'}")
+                    trades_to_remove.append(trade)
+            except Exception as e:
+                print(f"⚠️ خطأ في متابعة الصفقة {trade['pair_name']}: {e}")
 
     for trade in trades_to_remove:
         active_trades.remove(trade)
 
-# -------------------------------------------------------------
-# التشغيل الرئيسي للبوت
-# -------------------------------------------------------------
+# ================== التشغيل الرئيسي ==================
 if __name__ == "__main__":
-    send_telegram_message("🚀 <b>تم تفعيل البوت للعمل على مدار 24 ساعة بدون قيود زمنية!</b>")
-    print("🤖 البوت يعمل الآن ويراقب الأسواق مستمراً...")
+    send_telegram_message("🚀 <b>تم تفعيل البوت (النسخة المحسنة والمرنة)!</b>")
+    print("🤖 البوت يعمل الآن ويراقب الأسواق...")
     
     last_signals = {symbol: "HOLD" for symbol in SYMBOLS}
     last_global_signal_time = 0
@@ -295,9 +309,9 @@ if __name__ == "__main__":
             now = datetime.now()
             weekday = now.weekday()
 
-            # إيقاف التداول فقط في عطلة نهاية الأسبوع (السبت والأحد)
+            # إيقاف التداول في عطلة نهاية الأسبوع
             if weekday in [5, 6]:
-                print("🛑 السوق مغلق حالياً (عطلة نهاية الأسبوع)...")
+                print("🛑 السوق مغلق (عطلة نهاية الأسبوع)...")
                 time.sleep(3600)
                 continue
 
@@ -305,19 +319,26 @@ if __name__ == "__main__":
             check_active_trades()
 
             for symbol, pair_name in SYMBOLS.items():
+                # فلتر الأخبار
                 if is_news_time(symbol, pair_name):
                     continue
 
+                # جلب البيانات وتحليلها
                 df = get_market_data(symbol, interval="5m")
                 signal, price, rsi_val, confidence = analyze_market(df)
 
-                if signal in ["BUY", "SELL"] and signal != last_signals[symbol] and confidence >= 70:
+                # طباعة الحالة للتصحيح
+                print(f"⏳ [{pair_name}] | حالة: {signal} | سعر: {price:.5f} | RSI: {rsi_val:.1f} | ثقة: {confidence}%")
+
+                # شرط الإرسال (تم تخفيض الثقة إلى 65%)
+                if signal in ["BUY", "SELL"] and signal != last_signals[symbol] and confidence >= MIN_CONFIDENCE:
                     time_since_last_signal = current_time - last_global_signal_time
 
                     if time_since_last_signal >= MIN_SIGNAL_INTERVAL:
                         direction_ar = "🟢 شراء (CALL)" if signal == "BUY" else "🔴 بيع (PUT)"
-                        conf_emoji = "🔥 فرصة فائقة الدقة" if confidence >= 90 else "⚡ فرصة ممتازة جداً"
+                        conf_emoji = "🔥 فرصة ممتازة" if confidence >= 90 else "⚡ فرصة جيدة جداً"
 
+                        # حساب وقت الدخول (بداية الشمعة التالية)
                         next_candle_minute = ((now.minute // 5) + 1) * 5
                         if next_candle_minute >= 60:
                             entry_datetime = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
@@ -328,22 +349,20 @@ if __name__ == "__main__":
                         entry_time = entry_datetime.strftime("%H:%M:%S")
 
                         msg = (
-                            f"🎯 <b>تنبيه صفقة عالية الجودة والفلترة!</b>\n\n"
+                            f"🎯 <b>تنبيه صفقة عالية الجودة!</b>\n\n"
                             f"📊 الزوج: <b>{pair_name}</b>\n"
                             f"📈 الاتجاه: <b>{direction_ar}</b>\n"
                             f"🎯 <b>نسبة الثقة: {confidence}%</b> ({conf_emoji})\n\n"
-                            f"⏰ <b>وقت الدخول:</b> <code>{entry_time}</code> (بداية الشمعة)\n"
-                            f"⏱️ <b>مدة الصفقة:</b> <b>5 دقائق بالضبط</b>\n\n"
+                            f"⏰ <b>وقت الدخول الموصى به:</b> <code>{entry_time}</code>\n"
+                            f"⏱️ <b>مدة الصفقة:</b> 5 دقائق\n\n"
                             f"💵 السعر الحالي: <code>{price:.5f}</code>\n"
                             f"📊 RSI: <code>{rsi_val:.1f}</code>\n"
-                            f"🛡️ <b>الفلاتر المفعلة:</b> الأخبار + ATR + الشمعة القوية + EMA 200 + MACD Impulse + الدعم/المقاومة"
+                            f"🛡️ <b>الفلاتر:</b> أخبار + ATR + شمعة قوية + EMA200 + MACD + دعم/مقاومة"
                         )
 
                         keyboard = {
                             "inline_keyboard": [
-                                [
-                                    {"text": "📲 فتح منصة Pocket Option", "url": "https://pocketoption.com"}
-                                ],
+                                [{"text": "📲 فتح منصة Pocket Option", "url": "https://pocketoption.com"}],
                                 [
                                     {"text": "💵 $1", "callback_data": "amt_1"},
                                     {"text": "💵 $2", "callback_data": "amt_2"},
@@ -360,6 +379,7 @@ if __name__ == "__main__":
                         send_telegram_message(msg, reply_markup=keyboard)
                         print(f"✅ [{pair_name}] إشارة {signal} مؤكدة بنسبة {confidence}% عند الساعة {entry_time}")
                         
+                        # تسجيل الصفقة للمتابعة
                         active_trades.append({
                             'symbol': symbol,
                             'pair_name': pair_name,
@@ -372,13 +392,12 @@ if __name__ == "__main__":
                         last_signals[symbol] = signal
                         last_global_signal_time = current_time
                     else:
-                        print(f"⏳ [{pair_name}] تم تأجيل الإشارة مؤقته لتجنب التداخل.")
+                        print(f"⏳ [{pair_name}] تم تأجيل الإشارة مؤقتاً لتجنب التداخل.")
                 else:
                     if signal == "HOLD":
                         last_signals[symbol] = "HOLD"
-                    print(f"⏳ [{pair_name}] | حالة: {signal} | سعر: {price:.5f} | RSI: {rsi_val:.1f} | ثقة: {confidence}%")
 
-            time.sleep(60)
+            time.sleep(60)  # فحص كل دقيقة
 
         except KeyboardInterrupt:
             print("\n⛔ تم إيقاف البوت.")
@@ -386,4 +405,3 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ خطأ غير متوقع: {e}")
             time.sleep(10)
-            
